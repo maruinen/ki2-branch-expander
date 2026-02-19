@@ -21,7 +21,8 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
 
     if move_str.startswith('同'):
         if not board.move_stack: return None
-        to_square = board.move_stack[-1].to_square
+        last_move = board.move_stack[-1]
+        to_square = last_move.to_square
         piece_part = move_str[1:].strip()
     else:
         try:
@@ -34,6 +35,7 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
 
     piece_type = None
     relative_part = ""
+    # 長い名前から順にマッチング（成香など）
     for k in sorted(PIECE_TYPE_MAP.keys(), key=len, reverse=True):
         if piece_part.startswith(k):
             piece_type = PIECE_TYPE_MAP[k]
@@ -41,7 +43,7 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
             break
     if piece_type is None: return None
 
-    is_promotion_requested = '成' in relative_part
+    is_promotion_requested = '成' in relative_part and '不成' not in relative_part
     is_not_promotion_requested = '不成' in relative_part
     
     possible_moves = []
@@ -56,17 +58,24 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
             if actual_piece is None: continue
             
             match = False
+            # 駒の種類が一致するか、成る前の駒が指定されている場合を考慮
             if actual_piece.piece_type == piece_type:
                 if is_promotion_requested:
                     if move.promotion: match = True
                 elif is_not_promotion_requested:
                     if not move.promotion: match = True
                 else:
-                    match = True
+                    # 成駒が指定された場合は、すでに成っている駒のみ
+                    if piece_type > 8:
+                        match = True
+                    else:
+                        # 生駒が指定された場合、成る手と成らない手の両方が候補
+                        match = True
             elif is_promotion_requested and (actual_piece.piece_type + 8) == piece_type:
                 if move.promotion: match = True
             elif piece_type > 8 and (actual_piece.piece_type + 8) == piece_type:
-                if not move.promotion: match = True
+                # 「成銀」と指定されて、銀が成る場合
+                if move.promotion: match = True
             
             if match:
                 possible_moves.append(move)
@@ -74,29 +83,80 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
     if not possible_moves: return None
     if len(possible_moves) == 1: return possible_moves[0]
 
+    # 相対表記の処理
     is_black = board.turn == shogi.BLACK
+    
+    # 打が指定されている場合は、まずそれを優先
     if '打' in relative_part:
         for m in possible_moves:
             if m.drop_piece_type: return m
-
-    possible_moves_with_from = [m for m in possible_moves if m.from_square is not None]
-    if not possible_moves_with_from: return possible_moves[0]
     
-    if '右' in relative_part:
-        possible_moves_with_from.sort(key=lambda m: m.from_square % 9, reverse=is_black)
-    elif '左' in relative_part:
-        possible_moves_with_from.sort(key=lambda m: m.from_square % 9, reverse=not is_black)
-    elif '上' in relative_part:
-        possible_moves_with_from.sort(key=lambda m: m.from_square // 9)
-    elif '引' in relative_part or '下' in relative_part:
-        possible_moves_with_from.sort(key=lambda m: m.from_square // 9, reverse=True)
-    elif '寄' in relative_part:
-        possible_moves_with_from.sort(key=lambda m: abs((m.from_square // 9) - (to_square // 9)))
-    elif '直' in relative_part:
-        for m in possible_moves_with_from:
-            if (m.from_square % 9) == (to_square % 9): return m
+    # 盤上の駒からの移動に限定
+    candidates = [m for m in possible_moves if m.from_square is not None]
+    if not candidates: return None # 指し手が見つからない
+    if len(candidates) == 1: return candidates[0] # 曖昧性がない
 
-    return possible_moves_with_from[0]
+    # 相対位置判定のための補助関数
+    def get_file(sq): return 9 - (sq % 9)
+    def get_rank(sq): return (sq // 9) + 1
+
+    to_f = get_file(to_square)
+    to_r = get_rank(to_square)
+
+    final_candidates = list(candidates) # Make a copy to filter
+
+    # 1. 垂直方向の属性でフィルタ (上, 引, 寄)
+    vertical_filtered = []
+    if '上' in relative_part:
+        vertical_filtered = [m for m in final_candidates if (get_rank(m.from_square) > to_r if is_black else get_rank(m.from_square) < to_r)]
+    elif '引' in relative_part:
+        vertical_filtered = [m for m in final_candidates if (get_rank(m.from_square) < to_r if is_black else get_rank(m.from_square) > to_r)]
+    elif '寄' in relative_part:
+        vertical_filtered = [m for m in final_candidates if get_rank(m.from_square) == to_r]
+
+    if vertical_filtered:
+        final_candidates = vertical_filtered
+    
+    if len(final_candidates) == 1: return final_candidates[0]
+    if not final_candidates: return possible_moves[0] # Fallback if vertical filter eliminates everything
+
+    # 2. 水平方向の属性でフィルタ (直, 左, 右)
+    horizontal_filtered = []
+    if '直' in relative_part:
+        horizontal_filtered = [m for m in final_candidates if get_file(m.from_square) == to_f]
+    elif '左' in relative_part:
+        # Option 1: Relative to destination file
+        # Black: from_f > to_f
+        # White: from_f < to_f
+        relative_to_dest_left = [m for m in final_candidates if (get_file(m.from_square) > to_f if is_black else get_file(m.from_square) < to_f)]
+        if relative_to_dest_left:
+            horizontal_filtered = relative_to_dest_left
+        else:
+            # Option 2: Relative to other pieces (leftmost of remaining)
+            # Black: file 9 is left, so larger get_file value is "more left"
+            # White: file 1 is left, so smaller get_file value is "more left"
+            horizontal_filtered = sorted(final_candidates, key=lambda m: get_file(m.from_square), reverse=is_black)[:1]
+
+    elif '右' in relative_part:
+        # Option 1: Relative to destination file
+        # Black: from_f < to_f
+        # White: from_f > to_f
+        relative_to_dest_right = [m for m in final_candidates if (get_file(m.from_square) < to_f if is_black else get_file(m.from_square) > to_f)]
+        if relative_to_dest_right:
+            horizontal_filtered = relative_to_dest_right
+        else:
+            # Option 2: Relative to other pieces (rightmost of remaining)
+            # Black: file 1 is right, so smaller get_file value is "more right"
+            # White: file 9 is right, so larger get_file value is "more right"
+            horizontal_filtered = sorted(final_candidates, key=lambda m: get_file(m.from_square), reverse=not is_black)[:1] # Corrected sorting
+
+    if horizontal_filtered:
+        final_candidates = horizontal_filtered
+    
+    if final_candidates:
+        return final_candidates[0]
+    
+    return possible_moves[0]
 
 def get_board_key(board: shogi.Board) -> str:
     s = board.sfen()
