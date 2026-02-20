@@ -40,7 +40,7 @@
 1. Create a feature branch: `git checkout -b feature/description`
 2. Implement changes with tests
 3. Verify all tests pass: `pytest` or `python3 -m unittest discover`
-4. Create a PR with clear description
+4. Create a Pull Request(PR) with clear description
 5. Merge after review/approval
 
 ## Tooling

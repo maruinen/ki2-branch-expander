@@ -41,7 +41,8 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
             piece_type = PIECE_TYPE_MAP[k]
             relative_part = piece_part[len(k):]
             break
-    if piece_type is None: return None
+    if piece_type is None:
+        return None
 
     is_promotion_requested = '成' in relative_part and '不成' not in relative_part
     is_not_promotion_requested = '不成' in relative_part
@@ -80,7 +81,8 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
             if match:
                 possible_moves.append(move)
 
-    if not possible_moves: return None
+    if not possible_moves:
+        return None
     if len(possible_moves) == 1: return possible_moves[0]
 
     # 相対表記の処理
@@ -171,13 +173,14 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Set[str]]:
     except Exception as e:
         print(f"Error: {e}"); return {}
 
-    sections = re.split(r'(?=開始日時|変化：)', content)
-    move_pattern = re.compile(r'[▲△▽▼][^▲△▽▼\n\r*]+')
+    sections = re.split(r'(?=開始日時|手合割：|変化：)', content)
+    # より厳密な指し手パターン（空記号の後のスペースを許容）
+    move_pattern = re.compile(r'[▲△▽▼][ \t]*[^▲△▽▼\n\r* \t]+[ \t]*')
     
     total_found = 0; total_parsed = 0; errors = 0
     main_history: List[str] = [shogi.Board().sfen()]
 
-    for section in sections:
+    for section_idx, section in enumerate(sections):
         if not section.strip(): continue
         
         board = shogi.Board()
@@ -190,12 +193,17 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Set[str]]:
             start_move = int(var_match.group(1))
             if start_move <= len(main_history):
                 board = shogi.Board(main_history[start_move - 1])
-            else: continue
+            else:
+                continue
         
-        for line in section.splitlines():
+        for line_idx, line in enumerate(section.splitlines()):
             line = line.strip()
             if not line or line.startswith('*') or line.startswith('変化：'): continue
             
+            # 手合割などのヘッダー行をスキップ
+            if any(h in line for h in ['開始日時', '終了日時', '手合割', '先手', '後手', '棋戦']):
+                continue
+
             found_moves = move_pattern.findall(line)
             line_ok = True
             for move_str in found_moves:
@@ -214,10 +222,11 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Set[str]]:
                         else:
                             main_history[len(board.move_stack)] = board.sfen()
                 else:
+                    print(f"Failed to parse move: '{move_str.strip()}' at pos {key} (Section {section_idx}, Line {line_idx})")
                     errors += 1
                     line_ok = False
                     break
-            if not line_ok: break # そのゲームは諦める
+            if not line_ok: break 
 
     print(f"Found: {total_found}, Parsed: {total_parsed}, Errors: {errors}")
     return move_map
