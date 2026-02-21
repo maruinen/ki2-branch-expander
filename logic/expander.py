@@ -98,7 +98,7 @@ def get_ki2_move_str(board: shogi.Board, move: shogi.Move) -> str:
 
 def expand_tree(
     board: shogi.Board, 
-    move_map: Dict[str, Set[str]], 
+    move_map: Dict[str, Dict[str, List[str]]], 
     path_history: Set[str] = None
 ) -> List[Dict]:
     """
@@ -113,17 +113,18 @@ def expand_tree(
     if sfen_key in path_history:
         return []
 
-    next_moves_usi = move_map.get(sfen_key, set())
-    if not next_moves_usi:
+    next_moves_info = move_map.get(sfen_key, {})
+    if not next_moves_info:
         return []
 
     new_path_history = path_history | {sfen_key}
     tree = []
 
     # 決定論的な出力のためソート
-    for move_usi in sorted(list(next_moves_usi)):
+    for move_usi in sorted(next_moves_info.keys()):
         move = shogi.Move.from_usi(move_usi)
         ki2_val = get_ki2_move_str(board, move)
+        comments = next_moves_info[move_usi]
         
         board.push(move)
         branches = expand_tree(board, move_map, new_path_history)
@@ -132,7 +133,8 @@ def expand_tree(
         tree.append({
             'move': move,
             'branches': branches,
-            'ki2_str': ki2_val
+            'ki2_str': ki2_val,
+            'comments': comments
         })
         
     return tree
