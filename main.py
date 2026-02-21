@@ -21,16 +21,29 @@ def format_as_ki2_text(tree: List[Dict]) -> str:
         move_label = "▲" if current_depth % 2 != 0 else "△"
         lines.append(f"{move_label}{node['ki2_str']}")
         
+        # コメントの出力
+        for comment in node.get('comments', []):
+            lines.append(f"\n*{comment}\n")
+        
         traverse(node['branches'], current_depth + 1, True)
         
         for alt_node in current_tree[1:]:
             lines.append(f"\n\n変化：{current_depth}手目\n")
             move_label = "▲" if current_depth % 2 != 0 else "△"
             lines.append(f"{move_label}{alt_node['ki2_str']}")
+            
+            # 変化の指し手に対するコメント
+            for comment in alt_node.get('comments', []):
+                lines.append(f"\n*{comment}\n")
+                
             traverse(alt_node['branches'], current_depth + 1, False)
 
     traverse(tree, 1, True)
+    # フォーマットの微調整
     text = " ".join(lines).replace(" \n", "\n").replace("\n ", "\n")
+    # 連続する改行を整理
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
     return text
 
 def get_ki2_header(file_path: str) -> str:
