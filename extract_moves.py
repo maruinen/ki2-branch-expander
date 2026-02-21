@@ -1,9 +1,12 @@
 import shogi
 from typing import Dict, Set, List, Optional
 import re
+import collections
 
 ZEN_TO_INT = str.maketrans("１２３４５６７八九", "123456789")
 KAN_TO_INT = str.maketrans("一二三四五六七八九", "123456789")
+
+# ... (PIECE_TYPE_MAP and parse_ki2_move remain the same) ...
 
 PIECE_TYPE_MAP = {
     '歩': shogi.PAWN, '香': shogi.LANCE, '桂': shogi.KNIGHT, '銀': shogi.SILVER,
@@ -174,16 +177,23 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Dict[str, List[str]]]:
         print(f"Error: {e}"); return {}
 
     sections = re.split(r'(?=開始日時|手合割：|変化：)', content)
-    # より厳密な指し手パターン（空記号の後のスペースを許容）
-    move_pattern = re.compile(r'[▲△▽▼][ \t]*[^▲△▽▼\n\r* \t]+[ \t]*')
+    # 指し手パターン：記号で始まり、次の記号・改行・コメント記号の前まで
+    move_pattern = re.compile(r'[▲△▽▼][^▲△▽▼\n\r*]+')
     
     total_found = 0; total_parsed = 0; errors = 0
-    main_history: List[str] = [shogi.Board().sfen()]
+    # registry: move_count -> list of unique SFENs
+    registry: Dict[int, List[str]] = collections.defaultdict(list)
+    registry[0].append(shogi.Board().sfen())
 
     for section_idx, section in enumerate(sections):
         if not section.strip(): continue
         
-        board = shogi.Board()
+        # セクション内の全指し手をまず抽出
+        found_moves = move_pattern.findall(section)
+        if not found_moves:
+            continue
+
+        board = None
         is_variation = False
         start_move = 1
         
@@ -191,30 +201,65 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Dict[str, List[str]]]:
         if var_match:
             is_variation = True
             start_move = int(var_match.group(1))
-            if start_move <= len(main_history):
-                board = shogi.Board(main_history[start_move - 1])
+            
+            # 候補となる親局面をすべて見つける
+            first_move_str = found_moves[0].strip()
+            candidates = []
+            for sfen in reversed(registry[start_move - 1]):
+                temp_board = shogi.Board(sfen)
+                if parse_ki2_move(temp_board, first_move_str):
+                    candidates.append(sfen)
+            
+            # 最も多くの指し手をパースできる親を選択
+            best_parent_sfen = None
+            max_parsed = -1
+            
+            for sfen in candidates:
+                temp_board = shogi.Board(sfen)
+                parsed_count = 0
+                for m_str in found_moves:
+                    if parse_ki2_move(temp_board, m_str):
+                        temp_board.push(parse_ki2_move(temp_board, m_str))
+                        parsed_count += 1
+                    else:
+                        break
+                if parsed_count > max_parsed:
+                    max_parsed = parsed_count
+                    best_parent_sfen = sfen
+                if parsed_count == len(found_moves):
+                    break
+            
+            if best_parent_sfen:
+                board = shogi.Board(best_parent_sfen)
             else:
-                continue
+                if start_move == 1:
+                    board = shogi.Board()
+                else:
+                    continue
+        else:
+            board = shogi.Board()
         
         last_move_info = None
+        current_move_count = start_move - 1
 
         for line_idx, line in enumerate(section.splitlines()):
             line = line.strip()
+            # 変化行やヘッダー行をスキップしつつ、コメント行は処理
             if not line or line.startswith('変化：'): continue
             
             if line.startswith('*'):
                 if last_move_info:
                     key, usi = last_move_info
-                    move_map[key][usi].append(line[1:].strip())
+                    if key in move_map and usi in move_map[key]:
+                        move_map[key][usi].append(line[1:].strip())
                 continue
 
-            # 手合割などのヘッダー行をスキップ
             if any(h in line for h in ['開始日時', '終了日時', '手合割', '先手', '後手', '棋戦']):
                 continue
 
-            found_moves = move_pattern.findall(line)
+            line_moves = move_pattern.findall(line)
             line_ok = True
-            for move_str in found_moves:
+            for move_str in line_moves:
                 total_found += 1
                 key = get_board_key(board)
                 if key not in move_map: move_map[key] = {}
@@ -228,18 +273,20 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Dict[str, List[str]]]:
                     
                     board.push(move)
                     last_move_info = (key, usi)
-
-                    if not is_variation:
-                        if len(board.move_stack) >= len(main_history):
-                            main_history.append(board.sfen())
-                        else:
-                            main_history[len(board.move_stack)] = board.sfen()
+                    
+                    current_move_count += 1
+                    sfen = board.sfen()
+                    if sfen not in registry[current_move_count]:
+                        registry[current_move_count].append(sfen)
                 else:
-                    print(f"Failed to parse move: '{move_str.strip()}' at pos {key} (Section {section_idx}, Line {line_idx})")
+                    print(f"Failed to parse move: '{move_str.strip()}' at pos {key} (Section {section_idx})")
                     errors += 1
                     line_ok = False
                     break
             if not line_ok: break 
+
+    print(f"Found: {total_found}, Parsed: {total_parsed}, Errors: {errors}")
+    return move_map
 
     print(f"Found: {total_found}, Parsed: {total_parsed}, Errors: {errors}")
     return move_map
