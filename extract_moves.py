@@ -165,8 +165,8 @@ def get_board_key(board: shogi.Board) -> str:
     parts = s.split(' ')
     return " ".join(parts[:3])
 
-def extract_moves_from_ki2(file_path: str) -> Dict[str, Set[str]]:
-    move_map: Dict[str, Set[str]] = {}
+def extract_moves_from_ki2(file_path: str) -> Dict[str, Dict[str, List[str]]]:
+    move_map: Dict[str, Dict[str, List[str]]] = {}
     try:
         with open(file_path, 'r', encoding='cp932', errors='replace') as f:
             content = f.read()
@@ -196,10 +196,18 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Set[str]]:
             else:
                 continue
         
+        last_move_info = None
+
         for line_idx, line in enumerate(section.splitlines()):
             line = line.strip()
-            if not line or line.startswith('*') or line.startswith('変化：'): continue
+            if not line or line.startswith('変化：'): continue
             
+            if line.startswith('*'):
+                if last_move_info:
+                    key, usi = last_move_info
+                    move_map[key][usi].append(line[1:].strip())
+                continue
+
             # 手合割などのヘッダー行をスキップ
             if any(h in line for h in ['開始日時', '終了日時', '手合割', '先手', '後手', '棋戦']):
                 continue
@@ -209,13 +217,18 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Set[str]]:
             for move_str in found_moves:
                 total_found += 1
                 key = get_board_key(board)
-                if key not in move_map: move_map[key] = set()
+                if key not in move_map: move_map[key] = {}
                 
                 move = parse_ki2_move(board, move_str)
                 if move:
                     total_parsed += 1
-                    move_map[key].add(move.usi())
+                    usi = move.usi()
+                    if usi not in move_map[key]:
+                        move_map[key][usi] = []
+                    
                     board.push(move)
+                    last_move_info = (key, usi)
+
                     if not is_variation:
                         if len(board.move_stack) >= len(main_history):
                             main_history.append(board.sfen())
