@@ -81,7 +81,14 @@ def process_file(input_file: str):
     board = shogi.Board()
     expanded_tree = expand_tree(board, move_map)
     
-    print(f"Generating KI2 output...")
+    # Calculate total nodes in expanded tree for debug
+    def count_nodes(tree):
+        count = len(tree)
+        for node in tree:
+            count += count_nodes(node['branches'])
+        return count
+    
+    print(f"Expansion complete. Total nodes in expanded tree: {count_nodes(expanded_tree)}")
     header = get_ki2_header(input_file)
     ki2_text = format_as_ki2_text(expanded_tree)
     

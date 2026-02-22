@@ -6,8 +6,6 @@ import collections
 ZEN_TO_INT = str.maketrans("１２３４５６７八九", "123456789")
 KAN_TO_INT = str.maketrans("一二三四五六七八九", "123456789")
 
-# ... (PIECE_TYPE_MAP and parse_ki2_move remain the same) ...
-
 PIECE_TYPE_MAP = {
     '歩': shogi.PAWN, '香': shogi.LANCE, '桂': shogi.KNIGHT, '銀': shogi.SILVER,
     '金': shogi.GOLD, '角': shogi.BISHOP, '飛': shogi.ROOK, '玉': shogi.KING,
@@ -16,16 +14,20 @@ PIECE_TYPE_MAP = {
     '龍': shogi.PROM_ROOK, '竜': shogi.PROM_ROOK
 }
 
-def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
+def parse_ki2_move(board: shogi.Board, move_str: str, last_to_square: Optional[int] = None) -> Optional[shogi.Move]:
     move_str = move_str.strip()
     if not move_str: return None
     move_str = re.sub(r'^[▲△▽▼]', '', move_str).strip()
     if not move_str: return None
 
     if move_str.startswith('同'):
-        if not board.move_stack: return None
-        last_move = board.move_stack[-1]
-        to_square = last_move.to_square
+        to_square = None
+        if board.move_stack:
+            to_square = board.move_stack[-1].to_square
+        elif last_to_square is not None:
+            to_square = last_to_square
+        
+        if to_square is None: return None
         piece_part = move_str[1:].strip()
     else:
         try:
@@ -38,14 +40,12 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
 
     piece_type = None
     relative_part = ""
-    # 長い名前から順にマッチング（成香など）
     for k in sorted(PIECE_TYPE_MAP.keys(), key=len, reverse=True):
         if piece_part.startswith(k):
             piece_type = PIECE_TYPE_MAP[k]
             relative_part = piece_part[len(k):]
             break
-    if piece_type is None:
-        return None
+    if piece_type is None: return None
 
     is_promotion_requested = '成' in relative_part and '不成' not in relative_part
     is_not_promotion_requested = '不成' in relative_part
@@ -62,106 +62,64 @@ def parse_ki2_move(board: shogi.Board, move_str: str) -> Optional[shogi.Move]:
             if actual_piece is None: continue
             
             match = False
-            # 駒の種類が一致するか、成る前の駒が指定されている場合を考慮
             if actual_piece.piece_type == piece_type:
                 if is_promotion_requested:
                     if move.promotion: match = True
                 elif is_not_promotion_requested:
                     if not move.promotion: match = True
                 else:
-                    # 成駒が指定された場合は、すでに成っている駒のみ
-                    if piece_type > 8:
-                        match = True
-                    else:
-                        # 生駒が指定された場合、成る手と成らない手の両方が候補
-                        match = True
+                    if piece_type > 8: match = True
+                    else: match = True
             elif is_promotion_requested and (actual_piece.piece_type + 8) == piece_type:
                 if move.promotion: match = True
             elif piece_type > 8 and (actual_piece.piece_type + 8) == piece_type:
-                # 「成銀」と指定されて、銀が成る場合
                 if move.promotion: match = True
             
             if match:
                 possible_moves.append(move)
 
-    if not possible_moves:
-        return None
+    if not possible_moves: return None
     if len(possible_moves) == 1: return possible_moves[0]
 
-    # 相対表記の処理
     is_black = board.turn == shogi.BLACK
-    
-    # 打が指定されている場合は、まずそれを優先
     if '打' in relative_part:
         for m in possible_moves:
             if m.drop_piece_type: return m
     
-    # 盤上の駒からの移動に限定
     candidates = [m for m in possible_moves if m.from_square is not None]
-    if not candidates: return None # 指し手が見つからない
-    if len(candidates) == 1: return candidates[0] # 曖昧性がない
+    if not candidates: return None
+    if len(candidates) == 1: return candidates[0]
 
-    # 相対位置判定のための補助関数
-    def get_file(sq): return 9 - (sq % 9)
-    def get_rank(sq): return (sq // 9) + 1
+    def get_f(sq): return 9 - (sq % 9)
+    def get_r(sq): return (sq // 9) + 1
+    to_f, to_r = get_f(to_square), get_r(to_square)
 
-    to_f = get_file(to_square)
-    to_r = get_rank(to_square)
-
-    final_candidates = list(candidates) # Make a copy to filter
-
-    # 1. 垂直方向の属性でフィルタ (上, 引, 寄)
+    final_candidates = list(candidates)
     vertical_filtered = []
     if '上' in relative_part:
-        vertical_filtered = [m for m in final_candidates if (get_rank(m.from_square) > to_r if is_black else get_rank(m.from_square) < to_r)]
+        vertical_filtered = [m for m in final_candidates if (get_r(m.from_square) > to_r if is_black else get_r(m.from_square) < to_r)]
     elif '引' in relative_part:
-        vertical_filtered = [m for m in final_candidates if (get_rank(m.from_square) < to_r if is_black else get_rank(m.from_square) > to_r)]
+        vertical_filtered = [m for m in final_candidates if (get_r(m.from_square) < to_r if is_black else get_r(m.from_square) > to_r)]
     elif '寄' in relative_part:
-        vertical_filtered = [m for m in final_candidates if get_rank(m.from_square) == to_r]
-
-    if vertical_filtered:
-        final_candidates = vertical_filtered
+        vertical_filtered = [m for m in final_candidates if get_r(m.from_square) == to_r]
+    if vertical_filtered: final_candidates = vertical_filtered
     
     if len(final_candidates) == 1: return final_candidates[0]
-    if not final_candidates: return possible_moves[0] # Fallback if vertical filter eliminates everything
 
-    # 2. 水平方向の属性でフィルタ (直, 左, 右)
     horizontal_filtered = []
     if '直' in relative_part:
-        horizontal_filtered = [m for m in final_candidates if get_file(m.from_square) == to_f]
+        horizontal_filtered = [m for m in final_candidates if get_f(m.from_square) == to_f]
     elif '左' in relative_part:
-        # Option 1: Relative to destination file
-        # Black: from_f > to_f
-        # White: from_f < to_f
-        relative_to_dest_left = [m for m in final_candidates if (get_file(m.from_square) > to_f if is_black else get_file(m.from_square) < to_f)]
-        if relative_to_dest_left:
-            horizontal_filtered = relative_to_dest_left
-        else:
-            # Option 2: Relative to other pieces (leftmost of remaining)
-            # Black: file 9 is left, so larger get_file value is "more left"
-            # White: file 1 is left, so smaller get_file value is "more left"
-            horizontal_filtered = sorted(final_candidates, key=lambda m: get_file(m.from_square), reverse=is_black)[:1]
-
+        relative_to_dest_left = [m for m in final_candidates if (get_f(m.from_square) > to_f if is_black else get_f(m.from_square) < to_f)]
+        if relative_to_dest_left: horizontal_filtered = relative_to_dest_left
+        else: horizontal_filtered = sorted(final_candidates, key=lambda m: get_f(m.from_square), reverse=is_black)[:1]
     elif '右' in relative_part:
-        # Option 1: Relative to destination file
-        # Black: from_f < to_f
-        # White: from_f > to_f
-        relative_to_dest_right = [m for m in final_candidates if (get_file(m.from_square) < to_f if is_black else get_file(m.from_square) > to_f)]
-        if relative_to_dest_right:
-            horizontal_filtered = relative_to_dest_right
-        else:
-            # Option 2: Relative to other pieces (rightmost of remaining)
-            # Black: file 1 is right, so smaller get_file value is "more right"
-            # White: file 9 is right, so larger get_file value is "more right"
-            horizontal_filtered = sorted(final_candidates, key=lambda m: get_file(m.from_square), reverse=not is_black)[:1] # Corrected sorting
-
-    if horizontal_filtered:
-        final_candidates = horizontal_filtered
+        relative_to_dest_right = [m for m in final_candidates if (get_f(m.from_square) < to_f if is_black else get_f(m.from_square) > to_f)]
+        if relative_to_dest_right: horizontal_filtered = relative_to_dest_right
+        else: horizontal_filtered = sorted(final_candidates, key=lambda m: get_f(m.from_square), reverse=not is_black)[:1]
+    if horizontal_filtered: final_candidates = horizontal_filtered
     
-    if final_candidates:
-        return final_candidates[0]
-    
-    return possible_moves[0]
+    return final_candidates[0] if final_candidates else None
 
 def get_board_key(board: shogi.Board) -> str:
     s = board.sfen()
@@ -176,117 +134,119 @@ def extract_moves_from_ki2(file_path: str) -> Dict[str, Dict[str, List[str]]]:
     except Exception as e:
         print(f"Error: {e}"); return {}
 
-    sections = re.split(r'(?=開始日時|手合割：|変化：)', content)
-    # 指し手パターン：記号で始まり、次の記号・改行・コメント記号の前まで
+    header_patterns = [r'^開始日時：', r'^手合割：', r'^変化：']
+    combined_pattern = '|'.join(header_patterns)
+    matches = list(re.finditer(combined_pattern, content, re.MULTILINE))
+    sections_raw = [content[m.start():(matches[i+1].start() if i+1 < len(matches) else len(content))] for i, m in enumerate(matches)]
+
     move_pattern = re.compile(r'[▲△▽▼][^▲△▽▼\n\r*]+')
-    
     total_found = 0; total_parsed = 0; errors = 0
-    # registry: move_count -> list of unique SFENs
-    registry: Dict[int, List[str]] = collections.defaultdict(list)
-    registry[0].append(shogi.Board().sfen())
+    global_registry: Set[tuple[str, Optional[int], int]] = set()
+    global_registry.add((shogi.Board().sfen(), None, 0))
 
-    for section_idx, section in enumerate(sections):
-        if not section.strip(): continue
-        
-        # セクション内の全指し手をまず抽出
-        found_moves = move_pattern.findall(section)
-        if not found_moves:
-            continue
+    main_sections = []
+    variation_sections = []
+    for i, s in enumerate(sections_raw):
+        if i == 0 or (re.search(r'^手合割：', s, re.MULTILINE) and not re.search(r'^変化[：:]', s, re.MULTILINE)):
+            main_sections.append(s)
+        else:
+            variation_sections.append(s)
 
-        board = None
-        is_variation = False
-        start_move = 1
-        
-        var_match = re.search(r'変化：(\d+)手', section)
-        if var_match:
-            is_variation = True
-            start_move = int(var_match.group(1))
-            
-            # 候補となる親局面をすべて見つける
-            first_move_str = found_moves[0].strip()
-            candidates = []
-            for sfen in reversed(registry[start_move - 1]):
-                temp_board = shogi.Board(sfen)
-                if parse_ki2_move(temp_board, first_move_str):
-                    candidates.append(sfen)
-            
-            # 最も多くの指し手をパースできる親を選択
-            best_parent_sfen = None
-            max_parsed = -1
-            
-            for sfen in candidates:
-                temp_board = shogi.Board(sfen)
-                parsed_count = 0
-                for m_str in found_moves:
-                    if parse_ki2_move(temp_board, m_str):
-                        temp_board.push(parse_ki2_move(temp_board, m_str))
-                        parsed_count += 1
-                    else:
-                        break
-                if parsed_count > max_parsed:
-                    max_parsed = parsed_count
-                    best_parent_sfen = sfen
-                if parsed_count == len(found_moves):
-                    break
-            
-            if best_parent_sfen:
-                board = shogi.Board(best_parent_sfen)
-            else:
-                if start_move == 1:
-                    board = shogi.Board()
-                else:
-                    continue
+    def parse_section(section, is_var, best_p_info=None):
+        nonlocal total_found, total_parsed, errors
+        if is_var and best_p_info:
+            board = shogi.Board(best_p_info[0])
+            lts = best_p_info[1]
+            curr_cnt = best_p_info[2]
         else:
             board = shogi.Board()
-        
+            lts = None
+            curr_cnt = 0
+            global_registry.add((board.sfen(), None, 0))
+
+        found_moves = [m.strip() for m in move_pattern.findall(section)]
+        initial_sfen = board.sfen()
+        initial_lts = lts
         last_move_info = None
-        current_move_count = start_move - 1
 
-        for line_idx, line in enumerate(section.splitlines()):
+        for move_str in found_moves:
+            total_found += 1
+            key = get_board_key(board)
+            if key not in move_map: move_map[key] = {}
+            move = parse_ki2_move(board, move_str, lts)
+            if move:
+                total_parsed += 1
+                usi = move.usi()
+                if usi not in move_map[key]: move_map[key][usi] = []
+                lts = move.to_square
+                board.push(move)
+                last_move_info = (key, usi)
+                curr_cnt += 1
+                global_registry.add((board.sfen(), lts, curr_cnt))
+            else:
+                errors += 1
+                break
+        
+        # コメント処理
+        tmp_board = shogi.Board(initial_sfen)
+        tmp_lts = initial_lts
+        last_mi = None
+        for line in section.splitlines():
             line = line.strip()
-            # 変化行やヘッダー行をスキップしつつ、コメント行は処理
-            if not line or line.startswith('変化：'): continue
-            
-            if line.startswith('*'):
-                if last_move_info:
-                    key, usi = last_move_info
-                    if key in move_map and usi in move_map[key]:
-                        move_map[key][usi].append(line[1:].strip())
-                continue
+            if line.startswith('*') and last_mi:
+                k, u = last_mi
+                if k in move_map and u in move_map[k] and line[1:].strip() not in move_map[k][u]:
+                    move_map[k][u].append(line[1:].strip())
+            elif any(c in line for c in '▲△▽▼'):
+                for ms in move_pattern.findall(line):
+                    mk = get_board_key(tmp_board)
+                    mv = parse_ki2_move(tmp_board, ms, tmp_lts)
+                    if mv:
+                        tmp_lts = mv.to_square
+                        tmp_board.push(mv)
+                        last_mi = (mk, mv.usi())
+                    else: break
 
-            if any(h in line for h in ['開始日時', '終了日時', '手合割', '先手', '後手', '棋戦']):
-                continue
+    for s in main_sections: parse_section(s, False)
 
-            line_moves = move_pattern.findall(line)
-            line_ok = True
-            for move_str in line_moves:
-                total_found += 1
-                key = get_board_key(board)
-                if key not in move_map: move_map[key] = {}
-                
-                move = parse_ki2_move(board, move_str)
-                if move:
-                    total_parsed += 1
-                    usi = move.usi()
-                    if usi not in move_map[key]:
-                        move_map[key][usi] = []
-                    
-                    board.push(move)
-                    last_move_info = (key, usi)
-                    
-                    current_move_count += 1
-                    sfen = board.sfen()
-                    if sfen not in registry[current_move_count]:
-                        registry[current_move_count].append(sfen)
-                else:
-                    print(f"Failed to parse move: '{move_str.strip()}' at pos {key} (Section {section_idx})")
-                    errors += 1
-                    line_ok = False
-                    break
-            if not line_ok: break 
-
-    print(f"Found: {total_found}, Parsed: {total_parsed}, Errors: {errors}")
-    return move_map
+    pending_vars = variation_sections
+    for pass_idx in range(5):
+        still_pending = []
+        parsed_any = False
+        for s in pending_vars:
+            found_moves = [m.strip() for m in move_pattern.findall(s)]
+            if not found_moves: continue
+            var_match = re.search(r'^変化[：:]\s*(\d+)手', s, re.MULTILINE)
+            claimed_start_move = int(var_match.group(1)) if var_match else 1
+            first_move_str = found_moves[0]
+            best_p = None
+            max_score = -1
+            sorted_registry = sorted(list(global_registry), key=lambda x: abs(x[2] - (claimed_start_move - 1)))
+            for sfen, lts, m_count in sorted_registry:
+                temp_board = shogi.Board(sfen)
+                if parse_ki2_move(temp_board, first_move_str, lts):
+                    tb = shogi.Board(sfen)
+                    curr_lts = lts
+                    pc = 0
+                    lookahead_limit = min(len(found_moves), 20)
+                    for m_str in found_moves[:lookahead_limit]:
+                        move = parse_ki2_move(tb, m_str, curr_lts)
+                        if move:
+                            curr_lts = move.to_square
+                            tb.push(move)
+                            pc += 1
+                        else: break
+                    score = pc / lookahead_limit if lookahead_limit > 0 else 0
+                    if score > max_score:
+                        max_score = score
+                        best_p = (sfen, lts, m_count)
+                    if score == 1.0: break
+            if max_score > 0:
+                parse_section(s, True, best_p)
+                parsed_any = True
+            else: still_pending.append(s)
+        if not still_pending or not parsed_any: break
+        pending_sections = still_pending
 
     print(f"Found: {total_found}, Parsed: {total_parsed}, Errors: {errors}")
     return move_map
