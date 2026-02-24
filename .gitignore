@@ -1,4 +1,5 @@
 __pycache__/
+*.ki2
 *.ki2~
 todo.md~
 *_expanded.ki2
