@@ -67,29 +67,6 @@ def get_ki2_header(file_path: str) -> str:
     return "\n".join(header_lines)
 
 def process_file(input_file: str):
-    if input_file == "-":
-        print("Reading from stdin...", file=sys.stderr)
-        # Use a temporary file to handle the existing extract_moves_from_ki2 which expects a path
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ki2', delete=False) as tmp:
-            tmp.write(sys.stdin.read())
-            tmp_path = tmp.name
-        try:
-            move_map, arrival_info = extract_moves_from_ki2(tmp_path)
-            header = get_ki2_header(tmp_path)
-        finally:
-            os.unlink(tmp_path)
-            
-        if not move_map:
-            print("No moves extracted from stdin.", file=sys.stderr)
-            return
-
-        board = shogi.Board()
-        expanded_tree = expand_tree(board, move_map)
-        ki2_text = format_as_ki2_text(expanded_tree)
-        sys.stdout.write(header + "\n\n" + ki2_text)
-        return
-
     base, ext = os.path.splitext(input_file)
     output_file = f"{base}_expanded{ext}"
     
