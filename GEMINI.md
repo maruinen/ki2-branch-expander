@@ -31,6 +31,12 @@
    ```
    This will process `my_game.ki2` and `another_game.ki2`, generating `my_game_expanded.ki2` and `another_game_expanded.ki2`.
 
+## Testing
+Run the test suite using `unittest`:
+```bash
+python3 -m unittest discover tests
+```
+
 ## Development Conventions
 - **SFEN-based Identity**: Positions are identified using the board, turn, and hand components of the SFEN string (ignoring move count).
 - **Encoding**: KI2 files are typically handled using `cp932` (Shift_JIS).
