@@ -1,55 +1,22 @@
 # GEMINI.md
 
-## Project Overview
-**Ki2 Branch Expander** is a tool designed to expand and duplicate branches from confluent positions in KI2 shogi files. It's specifically built for KI2 viewers that do not support automatic merging of identical positions (graph view), ensuring that every possible path is explicitly represented in the move tree.
+## AI Context & Instructions
 
-## Main Technologies
+このファイルは、Gemini CLI がプロジェクトを理解し、一貫した開発を行うための特別な指示を格納します。
+
+### 技術スタック
 - **Language**: Python 3.10+
-- **Library**: `python-shogi` (for board simulation and move validation)
+- **Library**: `python-shogi` (盤面シミュレーションと指し手バリデーションに使用)
 
-## Project Structure
-- `main.py`: The primary CLI entry point for processing KI2 files.
-- `extract_moves.py`: Contains logic to parse KI2 files and build a mapping of positions to their subsequent moves.
-- `logic/expander.py`: Core logic for recursively expanding the move tree while avoiding infinite loops (Sennichite).
-- `analyze_confluence.py`: A diagnostic tool to report on the number of confluent positions in a given KI2 file.
+### 開発規約 (Development Conventions)
+- **局面の同一性 (SFEN-based Identity)**: 局面は、SFEN 文字列の盤面、手番、持駒成分のみを使用して識別します（手数 `move count` は無視）。
+- **無限ループ防止 (Cycle Detection)**: 木構造の展開時に、同一経路内での局面の重複（千日手）を検知し、無限再帰を防止する必要があります。
+- **相対表記の生成**: 展開された指し手を出力する際、`右`, `左`, `直`, `寄`, `上`, `引`, `打` などの KI2 特有の相対表記を正しく維持・生成してください。
 
-## Building and Running
-1. **Install dependencies**:
-   ```bash
-   pip install python-shogi
-   ```
-2. **Run the expander**:
-   ```bash
-   python3 main.py [INPUT_FILE ...]
-   ```
-   Where `[INPUT_FILE ...]` refers to one or more KI2 files to process. If no input files are provided, it defaults to processing `ShogiSekai.ki2` and `Test1.ki2` if they exist in the current directory.
-   The tool will output `[INPUT_FILE]_expanded.ki2` for each input file.
+### ツールとワークフロー
+- **GitHub CLI (`gh`)**: PR の作成等には `gh` コマンドを使用してください。
+- **PR 作成**: `gh pr create` を使用し、変更内容を明確に記述してください。
 
-   **Example**:
-   ```bash
-   python3 main.py my_game.ki2 another_game.ki2
-   ```
-   This will process `my_game.ki2` and `another_game.ki2`, generating `my_game_expanded.ki2` and `another_game_expanded.ki2`.
-
-## Testing
-Run the test suite using `unittest`:
-```bash
-python3 -m unittest discover tests
-```
-
-## Development Conventions
-- **SFEN-based Identity**: Positions are identified using the board, turn, and hand components of the SFEN string (ignoring move count).
-- **Encoding**: KI2 files are typically handled using `cp932` (Shift_JIS).
-- **Cycle Detection**: The expander tracks the current path to prevent infinite recursion during tree expansion.
-
-## Development Workflow
-1. Create a feature branch: `git checkout -b feature/description`
-2. Implement changes with tests
-3. Verify all tests pass: `pytest` or `python3 -m unittest discover`
-4. Create a Pull Request(PR) with clear description
-5. Merge after review/approval
-
-## Tooling
-- We have the `gh` command (GitHub CLI) installed and available.
-- Use `gh pr create` to create pull requests from the command line.
-
+### 注意事項
+- **ディレクトリ構成の重複禁止**: `README.md` に最新のツリー構成があるため、ここには記述しないでください。
+- **人間向けドキュメント**: 一般的な使い方は `README.md` を、詳細なアルゴリズムは `design.md` を参照してください。

@@ -1,76 +1,53 @@
 # Ki2 Branch Expander
 
-**Ki2 Branch Expander** is a specialized tool for Shogi enthusiasts and developers. It expands and duplicates branches from confluent positions in KI2 format Shogi kifu (game record) files.
+**Ki2 Branch Expander** は、将棋の棋譜形式である KI2 ファイルにおいて、合流した局面（同一局面）から先の分岐をすべての経路に複製・展開するためのツールです。
 
-## Overview
+## 概要
 
-Many KI2 viewers do not support automatic merging of identical positions (graph view) and instead expect a strict tree structure. In complex kifu with many variations, different paths often lead to the same board position (confluence).
+多くの KI2 ビューアは、異なる手順で同一局面になった場合の自動合流（グラフ表示）をサポートしておらず、厳密なツリー構造を期待します。このツールは、合流した局面から先の指し手をすべての経路にコピーすることで、どの手順からでもすべての分岐を閲覧できるようにします。
 
-This tool:
-1.  Parses KI2 files.
-2.  Identifies all reachable positions and their subsequent moves.
-3.  Recursively expands the move tree so that every possible path is explicitly represented, even if they pass through identical positions.
-4.  Outputs a new KI2 file with fully expanded branches.
+## ディレクトリ構成
 
-## Key Features
-
--   **SFEN-based Position Identity**: Uses board state, turn, and hand (from SFEN) to accurately identify identical positions regardless of the move sequence taken to reach them.
--   **Full Relative Notation Support**: Correctly handles and generates KI2 relative notations like `右`, `左`, `直`, `寄`, `上`, `引`, and `打`.
--   **Promotion Logic**: Supports `成` (promotion) and `不成` (non-promotion) notation.
--   **Cycle Detection**: Tracks the current path to prevent infinite recursion in case of Sennichite (repetition).
--   **Header Preservation**: Maintains kifu header information such as player names and game titles.
--   **CLI Interface**: Process multiple files easily via command line.
-
-## Requirements
-
--   Python 3.10 or higher
--   `python-shogi` library
-
-## Installation
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/maruinen/ki2-branch-expander.git
-    cd ki2-branch-expander
-    ```
-
-2.  Install the dependencies:
-    ```bash
-    pip install python-shogi
-    ```
-
-## Usage
-
-Run the expander by providing one or more input KI2 files:
-
-```bash
-python3 main.py input_file.ki2 [another_file.ki2 ...]
+```text
+.
+├── main.py              # CLI エントリポイント
+├── extract_moves.py     # KI2 パース・指し手抽出ロジック
+├── logic/
+│   ├── expander.py      # ツリー展開・表記生成の核心ロジック
+│   └── utils.py         # 共通ユーティリティ
+├── tests/               # ユニットテスト
+├── design.md            # 技術設計・アルゴリズム詳細
+├── requirements.md      # 機能要件・制約事項
+├── GEMINI.md            # AI エージェント向けコンテキスト
+└── README.md            # 本ファイル（プロジェクト概要・使い方）
 ```
 
--   The tool will generate a new file named `[filename]_expanded.ki2` for each input.
--   If no input files are provided, it defaults to searching for `ShogiSekai.ki2` and `Test1.ki2` in the current directory.
+## インストール
 
-### Example
+- **動作環境**: Python 3.10 以上
+- **依存ライブラリ**: `python-shogi`
 
 ```bash
-python3 main.py my_game.ki2
+pip install python-shogi
 ```
-This will create `my_game_expanded.ki2`.
 
-## Project Structure
+## 使い方
 
--   `main.py`: CLI entry point and KI2 formatting logic.
--   `extract_moves.py`: KI2 parsing and move extraction logic.
--   `logic/expander.py`: Core recursive tree expansion and notation generation logic.
+1つ以上の KI2 ファイルを指定して実行します。
 
-## Encoding
+```bash
+python3 main.py [入力ファイル ...]
+```
 
-This tool handles KI2 files using `cp932` (Shift_JIS) encoding, which is the standard for most Japanese Shogi software.
+- 各入力ファイルに対し、`[ファイル名]_expanded.ki2` が出力されます。
+- ファイルを指定しない場合、カレントディレクトリの `ShogiSekai.ki2` と `Test1.ki2` をデフォルトで処理します。
 
-## Contributing
+## 開発とテスト
 
-1.  Create a feature branch: `git checkout -b feature/description`
-2.  Implement changes with tests.
-3.  Verify all tests pass: `python3 -m unittest discover`
-4.  Create a Pull Request with a clear description.
-5.  Merge after review/approval.
+テストの実行:
+```bash
+python3 -m unittest discover tests
+```
+
+エンコーディング:
+- 将棋ソフトの標準に合わせ、KI2 ファイルを `cp932` (Shift_JIS) で処理します。
