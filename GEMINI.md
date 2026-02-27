@@ -32,6 +32,9 @@
 - **KI2 Relative Notation**: Implemented a cascading filter for Right, Left, Straight, Up, Down (引), and Yoru (寄).
   - Black: Right = smaller file, Up = smaller rank.
   - White: Right = larger file, Up = larger rank.
+- **Board Copying**: `shogi.Board` objects lack a `.copy()` method. Use `shogi.Board(board.sfen())` to clone a board state.
+- **USI Promotion**: Move USI strings for promotion moves include a `+` suffix (e.g., `7g7f+`). Ensure this is accounted for in test expectations.
+- **Testing**: Use USI-based board setups in unit tests to avoid dependency on external `.ki2` files.
 ## 7. 最新のテクニカル・インサイト (2026-02-27)
 
 ### パースとロジックの堅牢化
@@ -47,3 +50,14 @@
 - **BOD (柿木板) 形式**: 診断・デバッグ用に SFEN から BOD 形式への変換ユーティリティ (`logic/utils.py`) を実装。
 - **python-shogi の手札管理**: `board.pieces_in_hand[color][type]` または `Counter` を使用。SFEN は `shogi.Board` 初期化のために最低4〜6要素が必要。
 - **コメントの継承**: 指し手に紐付いたコメント（`*` 行）をパース時に保持し、ブランチ展開時にも各ノードに正しく引き継ぐ仕組みを導入。
+
+## 8. Technical Insights (Session Summary: GitHub Actions & Core Logic Review)
+
+### GitHub Actions Integration
+- **Automation:** Successfully integrated Gemini-powered workflows for issue triaging and PR reviews.
+- **Workflow Repository:** Utilizing standard templates from `google-github-actions/run-gemini-cli` to maintain consistency across projects.
+
+### Core Logic Reinforcement
+- **Position Identity:** Reconfirmed that positions must be identified using SFEN (board, turn, hand), ignoring move count, to accurately detect and expand confluent branches.
+- **Encoding Management:** Strict adherence to `cp932` (Shift_JIS) for both input and output is mandatory for compatibility with Shogi ecosystem tools.
+- **Infinite Recursion Prevention:** The expansion algorithm uses path history tracking to detect and break cycles (Sennichite), ensuring termination in complex game trees.

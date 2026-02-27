@@ -3,3 +3,6 @@ __pycache__/
 *.ki2~
 todo.md~
 *_expanded.ki2
+
+.gemini/
+gha-creds-*.json
